@@ -1,5 +1,4 @@
 // netlify/functions/generate.js
-// Netlify Functions — пази API ключа скрит от браузъра.
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -14,31 +13,51 @@ exports.handler = async (event) => {
   try {
     const { prompt } = JSON.parse(event.body);
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4000,
-        system: "Ти си лекар-нутриционист специалист по диабет. Отговаряш САМО с валиден JSON без markdown.",
-        messages: [{ role: "user", content: prompt }],
-      }),
+    // Use https module (built-in Node.js) instead of fetch
+    const https = require("https");
+
+    const body = JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4000,
+      system: "Ти си лекар-нутриционист специалист по диабет. Отговаряш САМО с валиден JSON без markdown.",
+      messages: [{ role: "user", content: prompt }],
     });
 
-    const data = await res.json();
+    const data = await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: "api.anthropic.com",
+        path: "/v1/messages",
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-length": Buffer.byteLength(body),
+        },
+      }, (res) => {
+        let raw = "";
+        res.on("data", chunk => raw += chunk);
+        res.on("end", () => {
+          try {
+            resolve({ status: res.statusCode, data: JSON.parse(raw) });
+          } catch(e) {
+            reject(new Error("Invalid JSON from Anthropic: " + raw));
+          }
+        });
+      });
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
 
-    if (!res.ok) {
-      return { statusCode: res.status, body: JSON.stringify({ error: data?.error?.message || "API грешка" }) };
+    if (data.status !== 200) {
+      return { statusCode: data.status, body: JSON.stringify({ error: data.data?.error?.message || "API грешка" }) };
     }
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(data.data),
     };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: e?.message || "Сървърна грешка" }) };
