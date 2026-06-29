@@ -1,65 +1,63 @@
-// netlify/functions/generate.js
+const https = require("https");
 
 exports.handler = async (event) => {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  };
+
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers, body: "" };
+  }
+
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
+    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method not allowed" }) };
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return { statusCode: 500, body: JSON.stringify({ error: "ANTHROPIC_API_KEY не е зададен." }) };
+    return { statusCode: 500, headers, body: JSON.stringify({ error: "API key not set" }) };
   }
 
   try {
     const { prompt } = JSON.parse(event.body);
 
-    // Use https module (built-in Node.js) instead of fetch
-    const https = require("https");
-
-    const body = JSON.stringify({
+    const requestBody = JSON.stringify({
       model: "claude-sonnet-4-6",
       max_tokens: 4000,
       system: "Ти си лекар-нутриционист специалист по диабет. Отговаряш САМО с валиден JSON без markdown.",
       messages: [{ role: "user", content: prompt }],
     });
 
-    const data = await new Promise((resolve, reject) => {
+    const result = await new Promise((resolve, reject) => {
       const req = https.request({
         hostname: "api.anthropic.com",
         path: "/v1/messages",
         method: "POST",
         headers: {
-          "content-type": "application/json",
+          "Content-Type": "application/json",
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
-          "content-length": Buffer.byteLength(body),
+          "Content-Length": Buffer.byteLength(requestBody),
         },
       }, (res) => {
-        let raw = "";
-        res.on("data", chunk => raw += chunk);
-        res.on("end", () => {
-          try {
-            resolve({ status: res.statusCode, data: JSON.parse(raw) });
-          } catch(e) {
-            reject(new Error("Invalid JSON from Anthropic: " + raw));
-          }
-        });
+        let data = "";
+        res.on("data", chunk => data += chunk);
+        res.on("end", () => resolve({ status: res.statusCode, body: data }));
       });
       req.on("error", reject);
-      req.write(body);
+      req.write(requestBody);
       req.end();
     });
 
-    if (data.status !== 200) {
-      return { statusCode: data.status, body: JSON.stringify({ error: data.data?.error?.message || "API грешка" }) };
-    }
-
     return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data.data),
+      statusCode: result.status,
+      headers,
+      body: result.body,
     };
   } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ error: e?.message || "Сървърна грешка" }) };
+    return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
   }
 };
