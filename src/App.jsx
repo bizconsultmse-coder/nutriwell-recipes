@@ -641,19 +641,10 @@ ${parseFloat(profile.hba1c)>9?"- ВНИМАНИЕ: Много висок HbA1c -
 }`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/.netlify/functions/generate", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "anthropic-version": "2023-06-01",
-          "x-api-key": "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",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 4000,
-          system: "Ти си лекар-нутриционист специалист по диабет. Отговаряш САМО с валиден JSON без markdown.",
-          messages: [{ role: "user", content: prompt }],
-        }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt }),
       });
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
